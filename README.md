@@ -1,4 +1,3 @@
-````markdown
 # logue
 A lightweight terminal logbook with Git integration.
 
@@ -116,5 +115,3 @@ git remote set-url origin https://<USERNAME>:<TOKEN>@github.com/<USERNAME>/<REPO
 ## License
 
 MIT License. See `LICENSE` for details.
-
-```
