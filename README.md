@@ -1,11 +1,9 @@
 # logue
-A lightweight terminal logbook with Git integration.
+### A lightweight terminal logbook with Git integration.
 
 `logue` is a minimal, curses-based logbook that lets you quickly capture notes in your terminal.  
 Each entry is timestamped, tagged automatically, and stored in JSON format.  
 All logs are committed and pushed to your Git repository, so your journal is version-controlled and backed up.
-
----
 
 ## Features
 
@@ -18,8 +16,6 @@ All logs are committed and pushed to your Git repository, so your journal is ver
 - Location tracking — when you start `logue`, it asks for your location and saves it alongside entries.  
 - Daily view — shows only entries from the current day.  
 - Custom terminal title ("logue").  
-
----
 
 ## Installation
 
@@ -56,8 +52,6 @@ Now you can run:
 logue
 ```
 
----
-
 ## Usage
 
 ### Start logging
@@ -83,8 +77,6 @@ logue --search 2025_09_08
 logue --search-tag projectx
 ```
 
----
-
 ## Data format
 
 All logs are stored in `logue.json` (Git-tracked). Example:
@@ -99,8 +91,6 @@ All logs are stored in `logue.json` (Git-tracked). Example:
   }
 ]
 ```
-
----
 
 ## GitHub Integration
 
