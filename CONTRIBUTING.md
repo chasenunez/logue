@@ -1,4 +1,4 @@
-# Contributing to Stardate
+# Contributing to logue
 
 Thank you for your interest in contributing! Contributions of all kinds are welcome, whether it’s fixing bugs, adding features, improving documentation, or suggesting ideas.
 
@@ -44,4 +44,4 @@ Please be respectful and constructive. Disagreements are natural, but all contri
 
 ---
 
-Happy logging!
+Happy loguing!
