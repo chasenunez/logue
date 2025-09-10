@@ -22,7 +22,7 @@ All logs are committed and pushed to your Git repository, so your journal is ver
 1. Clone this repository:
 
 ```bash
-git clone https://github.com/<your-username>/logue.git
+git clone https://gitlab.eawag.ch/chase.nunez/logue.git
 cd logue
 ````
 
