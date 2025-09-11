@@ -11,7 +11,7 @@ All logs are committed and pushed to your Git repository, so your journal is ver
 - Current entry editor with arrow key navigation and editing.  
 - Automatic wrapping of text without breaking words.  
 - Tag extraction — write `#tags` directly in your entry, they will be saved separately in JSON.
-- Task-fixing for the next day - write '*task you would like to show up tomorrow' in the entry box, and they will be saved separately int he JSON, and appear the following day under "Tasks for today".  
+- Task-fixing for the next day - write `*task you would like to show up tomorrow` in the entry box, and they will be saved separately int he JSON, and appear the following day under "Tasks for today".  
 - Search support by date (`--search`) or by tag (`--search-tag`).  
 - Git integration — entries are auto-committed and pushed.  
 - Location tracking — when you start `logue`, it asks for your location and saves it alongside entries.  
