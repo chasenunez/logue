@@ -1313,6 +1313,14 @@
         "eawag"
       ],
       "location": "EAWAG"
+    },
+    {
+      "timestamp": "2025_09_11_14_44_22",
+      "text": "allow the users to edit the metadata and headers, andthen upload a new iCSV",
+      "tags": [
+        "eawag"
+      ],
+      "location": "EAWAG"
     }
   ],
   "tasks": {
