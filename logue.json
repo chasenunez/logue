@@ -1329,6 +1329,14 @@
         "eawag"
       ],
       "location": "EAWAG"
+    },
+    {
+      "timestamp": "2025_09_11_14_49_51",
+      "text": "greatest proportion of non-tabular data in envidat: geotiff or net csf",
+      "tags": [
+        "eawag"
+      ],
+      "location": "EAWAG"
     }
   ],
   "tasks": {
