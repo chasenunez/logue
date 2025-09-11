@@ -1345,6 +1345,14 @@
         "eawag"
       ],
       "location": "EAWAG"
+    },
+    {
+      "timestamp": "2025_09_11_14_54_29",
+      "text": "QA/QC is essentially about looking at old data closely",
+      "tags": [
+        "eawag"
+      ],
+      "location": "EAWAG"
     }
   ],
   "tasks": {
