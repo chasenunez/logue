@@ -1305,6 +1305,14 @@
         "eawag"
       ],
       "location": "EAWAG"
+    },
+    {
+      "timestamp": "2025_09_11_14_43_18",
+      "text": "will provide some real world examples , go to envidat 01 UI find ned files , maybe need to curate enrich csvs and create icsv",
+      "tags": [
+        "eawag"
+      ],
+      "location": "EAWAG"
     }
   ],
   "tasks": {
