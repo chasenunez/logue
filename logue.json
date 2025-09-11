@@ -1281,6 +1281,14 @@
         "eawag"
       ],
       "location": "EAWAG"
+    },
+    {
+      "timestamp": "2025_09_11_12_21_36",
+      "text": "",
+      "tags": [
+        "eawag"
+      ],
+      "location": "EAWAG"
     }
   ],
   "tasks": {
@@ -1294,7 +1302,8 @@
       "update copyright guidance with NASA suggestion",
       "update the production code for logue",
       "push changes to envidat_frictionless",
-      "tasks seems to still work"
+      "tasks seems to still work",
+      "send emails"
     ]
   }
 }
