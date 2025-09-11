@@ -1337,6 +1337,14 @@
         "eawag"
       ],
       "location": "EAWAG"
+    },
+    {
+      "timestamp": "2025_09_11_14_50_50",
+      "text": "polar vs cartesian coordiantes",
+      "tags": [
+        "eawag"
+      ],
+      "location": "EAWAG"
     }
   ],
   "tasks": {
