@@ -1369,6 +1369,14 @@
         "eawag"
       ],
       "location": "EAWAG"
+    },
+    {
+      "timestamp": "2025_09_11_16_53_42",
+      "text": "creating new enrichment_engine repo for the csv > icsv enrichment engine",
+      "tags": [
+        "eawag"
+      ],
+      "location": "EAWAG"
     }
   ],
   "tasks": {
