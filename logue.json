@@ -1449,6 +1449,14 @@
         "eawag"
       ],
       "location": "EAWAG"
+    },
+    {
+      "timestamp": "2025_09_12_13_58_34",
+      "text": "ok so the qustion is this: is having my logue.json file in the project file a terrible idea beacuse it means I will never be able to have a production version of logue. i need to locate the logue.json file elsewhere",
+      "tags": [
+        "eawag"
+      ],
+      "location": "EAWAG"
     }
   ],
   "tasks": {
