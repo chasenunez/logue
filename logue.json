@@ -1457,6 +1457,14 @@
         "eawag"
       ],
       "location": "EAWAG"
+    },
+    {
+      "timestamp": "2025_09_12_14_17_48",
+      "text": "updated the logue.json save file in a private repo attached directly to github instead of via gitlab",
+      "tags": [
+        "eawag"
+      ],
+      "location": "EAWAG"
     }
   ],
   "tasks": {
