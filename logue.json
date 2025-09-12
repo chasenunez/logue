@@ -1377,6 +1377,14 @@
         "eawag"
       ],
       "location": "EAWAG"
+    },
+    {
+      "timestamp": "2025_09_12_08_29_42",
+      "text": "emails, adding update to cds report agenda, working on the csv enrichment",
+      "tags": [
+        "eawag"
+      ],
+      "location": "EAWAG"
     }
   ],
   "tasks": {
