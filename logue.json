@@ -1425,6 +1425,14 @@
         "eawag"
       ],
       "location": "EAWAG"
+    },
+    {
+      "timestamp": "2025_09_12_11_00_35",
+      "text": "logue.json is still being shown though so will work on that next",
+      "tags": [
+        "eawag"
+      ],
+      "location": "EAWAG"
     }
   ],
   "tasks": {
