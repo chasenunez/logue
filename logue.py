@@ -18,6 +18,7 @@ import argparse
 import curses
 import datetime
 import json
+import sys
 import re
 import subprocess
 import sys
@@ -28,67 +29,87 @@ from typing import List, Dict, Any, Optional, Tuple
 # ------------ Config ------------
 TASKS_GAP = 1  # blank lines between today's tasks and tomorrow's header
 
-# ------------ Paths ------------
+# ---------------- Paths ----------------
+# Program can be anywhere
 SCRIPT_DIR = Path(__file__).resolve().parent
-LOGFILE = SCRIPT_DIR / "logue.json"
 
+# log_cold_storage directory
+COLD_STORAGE_DIR = Path.home() / "Documents" / "log_cold_storage"
+COLD_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+LOGFILE = COLD_STORAGE_DIR / "logue.json"
+
+# Repository URL (used only if git remote isn't set)
+COLD_REPO_URL = "https://github.com/chasenunez/log_cold_storage.git"
 
 # ------------ Data storage ------------
-def load_data() -> Dict[str, Any]:
+def load_data() -> dict:
     if not LOGFILE.exists():
         return {"entries": [], "tasks": {}}
     try:
         with LOGFILE.open("r", encoding="utf-8") as f:
             obj = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        print(f"Error reading log file: {e}", file=sys.stderr)
+        if isinstance(obj, dict):
+            return {"entries": obj.get("entries", []), "tasks": obj.get("tasks", {})}
+        return {"entries": [], "tasks": {}}
+    except Exception as e:
+        print(f"[ERROR] Failed to load log file: {e}", file=sys.stderr)
         return {"entries": [], "tasks": {}}
 
-    if isinstance(obj, list):
-        return {"entries": obj, "tasks": {}}
-    if isinstance(obj, dict):
-        entries = obj.get("entries", [])
-        tasks = obj.get("tasks", {})
-        if not isinstance(entries, list):
-            entries = []
-        if not isinstance(tasks, dict):
-            tasks = {}
-        return {"entries": entries, "tasks": tasks}
-    return {"entries": [], "tasks": {}}
-
-
-def save_data(data: Dict[str, Any]) -> None:
-    out = {"entries": data.get("entries", []), "tasks": data.get("tasks", {})}
+def save_data(data: dict) -> None:
     with LOGFILE.open("w", encoding="utf-8") as f:
-        json.dump(out, f, indent=2, ensure_ascii=False)
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    git_commit_and_push()
+
 
 
 # ------------ Git (silent) ------------
 def git_commit_and_push() -> None:
+    """
+    Commit and push logue.json to the cold storage repo.
+    Assumes that the repo has been cloned and the remote origin set to COLD_REPO_URL.
+    """
+    import subprocess
+    import sys
+
     try:
+        # Ensure we are in the cold storage repo
+        subprocess.run(["git", "init"], cwd=COLD_STORAGE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        # Ensure remote origin exists
+        remotes = subprocess.run(["git", "remote"], cwd=COLD_STORAGE_DIR, capture_output=True, text=True)
+        if "origin" not in remotes.stdout:
+            subprocess.run(["git", "remote", "add", "origin", COLD_REPO_URL], cwd=COLD_STORAGE_DIR)
+
+        # Add and commit the file
         subprocess.run(
             ["git", "add", str(LOGFILE.name)],
             check=True,
-            cwd=SCRIPT_DIR,
+            cwd=COLD_STORAGE_DIR,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         subprocess.run(
             ["git", "commit", "-m", "logue: update"],
             check=True,
-            cwd=SCRIPT_DIR,
+            cwd=COLD_STORAGE_DIR,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        subprocess.run(["git", "push"], check=True, cwd=SCRIPT_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["git", "push", "-u", "origin", "main"],  # or "master" depending on your repo default branch
+            check=True,
+            cwd=COLD_STORAGE_DIR,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     except subprocess.CalledProcessError as e:
-        # Print to stderr so the user can see at least after exit if something went wrong.
         print(f"[WARN] Git operation failed: {e}", file=sys.stderr)
         print(
-            "If authentication fails after reboot, set a GitHub token:\n"
-            "  git remote set-url origin https://<USERNAME>:<TOKEN>@github.com/<USERNAME>/<REPO>.git",
+            "If authentication fails, ensure the remote repo exists and credentials are set.\n"
+            f"Remote URL: {COLD_REPO_URL}",
             file=sys.stderr,
         )
+
 
 
 # ------------ Helpers ------------
