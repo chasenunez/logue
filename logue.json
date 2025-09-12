@@ -1417,6 +1417,14 @@
         "eawag"
       ],
       "location": "EAWAG"
+    },
+    {
+      "timestamp": "2025_09_12_10_56_31",
+      "text": "i have been wrestling with github and git lab integration with ssh public keys and think i finally solved it",
+      "tags": [
+        "eawag"
+      ],
+      "location": "EAWAG"
     }
   ],
   "tasks": {
