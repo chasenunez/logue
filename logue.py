@@ -328,7 +328,7 @@ def interactive_mode(stdscr) -> None:
     today_str = today_date.strftime("%Y_%m_%d")
     tomorrow_date = today_date + datetime.timedelta(days=1)
     tomorrow_str = tomorrow_date.strftime("%Y_%m_%d")
-    date_str_pretty = f"{ordinal(today_date.day)}{today_date.strftime('%B')}{today_date.year}"
+    date_str_pretty = f"{ordinal(today_date.day)} {today_date.strftime('%B')} {today_date.year}"
 
     # Main loop
     while True:
