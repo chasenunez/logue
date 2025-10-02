@@ -85,11 +85,25 @@ All logs are stored in `logue.json` (Git-tracked). Example:
 
 ## GitHub Integration
 
-Make sure your repository’s remote URL includes a personal access token if you want seamless pushes:
-It is also goof practice not to have your log file in the same directory as the program file (if the program file is visible on github). but you can save your log.json file in a separate repo with minimal fiddling in the code. 
 
+It is goof practice not to have your log file in the same directory as the program file (if the program file is visible on github). But you can save your log.json file in a separate repo with minimal fiddling in `logue.py`
+```python3
+# ---------------- Paths ----------------
+# Program can be anywhere
+SCRIPT_DIR = Path(__file__).resolve().parent
+
+# log_cold_storage directory
+COLD_STORAGE_DIR = Path.home() / "Documents" / "log_cold_storage"
+COLD_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+LOGFILE = COLD_STORAGE_DIR / "logue.json"
+
+# Repository URL (used only if git remote isn't set)
+COLD_REPO_URL = "<URL_FOR_YOUR_COLD_STORAGE_REPO>"
+
+```
+Make sure your repository’s remote URL includes a personal access token if you want seamless pushes:
 ```bash
-git remote set-url origin https://<USERNAME>:<TOKEN>@github.com/<USERNAME>/<REPO>.git
+git remote set-url origin https://<USERNAME>:<TOKEN>@github.com/<USERNAME>/<COLD_STORAGE_REPO>.git
 ```
 
 ---
