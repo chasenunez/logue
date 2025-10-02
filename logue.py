@@ -12,6 +12,7 @@ This is a patched version that fixes several issues found in the prior copy:
    and safe handling of narrow terminals.
  - Keeps the user's current features: tags with '#', tasks for tomorrow using '*',
    tasks persisted under "tasks" keyed by YYYY_MM_DD, entries under "entries".
+ - Fixes the date format in the User interface to not be so american so the haters will put their pitchforks away.
 """
 
 import argparse
@@ -39,7 +40,7 @@ COLD_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 LOGFILE = COLD_STORAGE_DIR / "logue.json"
 
 # Repository URL (used only if git remote isn't set)
-COLD_REPO_URL = "https://github.com/chasenunez/log_cold_storage.git"
+COLD_REPO_URL = "https://github.com/chasenunez/log_cold_storage.git" #Your cold storage repo goes here to keep your logs out of the public repo
 
 # ------------ Data storage ------------
 def load_data() -> dict:
@@ -119,7 +120,7 @@ def extract_tags(text: str) -> List[str]:
 
 def extract_tasks_and_clean_text(text: str) -> Tuple[List[str], str]:
     """
-    Extract tasks denoted by leading '*' and return (tasks, cleaned_text).
+    Extract tasks with a leading '*' and return (tasks, cleaned_text).
     Cleans removed task lines and any now-empty lines.
     """
     tasks = re.findall(r"\*\s*([^\n\r]+)", text)
@@ -149,7 +150,7 @@ def get_singleline_input(stdscr, y: int, x: int, max_width: int) -> Optional[str
     Single-line editor:
       - Left/Right arrow navigation
       - Backspace/delete
-      - Horizontal scrolling if text longer than visible width
+      - Horizontal scrolling if text longer than visible width (this is still not working as I would like, especially for tasks)
       - Enter -> return the string
       - ESC -> return None (cancel)
     """
@@ -218,6 +219,7 @@ def add_task_for_date(tasks_map: Dict[str, List[str]], date_str: str, task: str)
 
 
 # ------------ CLI search helpers ------------
+# EK has the idea of implementing a grep search over the whole file which I am on board with but haven't impemented yet. 
 def search_by_date(date_prefix: str) -> None:
     data = load_data()
     entries = data.get("entries", [])
@@ -290,6 +292,8 @@ def interactive_mode(stdscr) -> None:
     stdscr.clear()
     height, width = stdscr.getmaxyx()
 
+    # i mean how cool is this? very 90's. it is a TOIlet font called "future", but there were a ton of good options that I could have gone with here: https://patorjk.com/software/taag/#p=display&f=Graffiti&t=Type+Something+&x=none&v=4&h=4&w=80&we=false
+    # 
     logo_lines = [
         "╻  ┏━┓┏━╸╻ ╻┏━╸",
         "┃  ┃ ┃┃╺┓┃ ┃┣╸ ",
@@ -358,6 +362,7 @@ def interactive_mode(stdscr) -> None:
                 pass
 
         # Entry box (white)
+        # I have tried to find a way to fix the "space" at the right hand side of the box for many moons and can't figure it out. but it is mostly aesthetic, so it persists. But kudos to anyone that can fix it. 
         box_top = header_height + 1
         box_left = left
         box_width = max(30, width - left - right)
@@ -375,7 +380,7 @@ def interactive_mode(stdscr) -> None:
             # If ACS_* drawing fails, ignore — terminal might not support it or be too small
             pass
 
-        prompt_text = "Entry: "
+        prompt_text = "Entry: " #Log Something; New Entry; etc. 
         entry_y = box_top + 1
         prompt_x = box_left + 2
         entry_x = prompt_x + len(prompt_text)
