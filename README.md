@@ -1,22 +1,17 @@
 # logue
 ### A lightweight terminal logbook with Git integration.
 
-`logue` is a minimal, curses-based logbook that lets you quickly capture notes in your terminal.  
+`logue` is a minimal, curses-based terminal logbook that lets you quickly capture tasks.  
 Each entry is timestamped, tagged automatically, and stored in JSON format.  
 All logs are committed and pushed to your Git repository, so your journal is version-controlled and backed up.
 
 ## Features
 
-- Terminal UI with a simple, distraction-free design.  
-- Current entry editor with arrow key navigation and editing.  
-- Automatic wrapping of text without breaking words.  
 - Tag extraction — write `#tags` directly in your entry, they will be saved separately in JSON.
 - Task-fixing for the next day - write `*task you would like to show up tomorrow` in the entry box, and they will be saved separately int he JSON, and appear the following day under "Tasks for today".  
 - Search support by date (`--search`) or by tag (`--search-tag`).  
 - Git integration — entries are auto-committed and pushed.  
 - Location tracking — when you start `logue`, it asks for your location and saves it alongside entries.  
-- Daily view — shows only entries from the current day.  
-- Custom terminal title ("logue").  
 
 ## Installation
 
@@ -33,33 +28,28 @@ cd logue
 chmod +x logue.py
 ```
 
-3. (Optional) Create a shortcut so you can just type `logue` into the terminal:
+3. Create a shortcut so you can just type `logue` into the terminal (instead of invoking python3):
 
 ```bash
 mkdir -p ~/bin
 ln -s "$(pwd)/logue.py" ~/bin/logue
 ```
 
-4. Add `~/bin` to your `PATH` if not already present. For zsh:
+4. Add `~/bin` to your `PATH` if not already present. For zsh (the mac shell) that looks like:
 
 ```bash
 echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-Now you can run:
+Now you can run to following from the terminal to begin logging:
 
 ```bash
 logue
 ```
-
-## Usage
 
 ### Start logging
 
-```bash
-logue
-```
 
 * Use arrow keys to navigate and edit your current entry.
 * Press Enter to save the entry.
@@ -96,6 +86,7 @@ All logs are stored in `logue.json` (Git-tracked). Example:
 ## GitHub Integration
 
 Make sure your repository’s remote URL includes a personal access token if you want seamless pushes:
+It is also goof practice not to have your log file in the same directory as the program file (if the program file is visible on github). but you can save your log.json file in a separate repo with minimal fiddling in the code. 
 
 ```bash
 git remote set-url origin https://<USERNAME>:<TOKEN>@github.com/<USERNAME>/<REPO>.git
