@@ -107,7 +107,7 @@ git remote set-url origin https://<USERNAME>:<TOKEN>@github.com/<USERNAME>/<COLD
 ```
 
 ## Dev ideas
-- I would like to transition this to Rust, and also add a few features (access to past logs in window, more advanced text editing using nvim, editable content IRL)
+- I would like to add a few features (access to past logs in window, more advanced text editing using nvim, editable content IRL)
 
 ## License
 
