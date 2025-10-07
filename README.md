@@ -106,7 +106,8 @@ Make sure your repository’s remote URL includes a personal access token if you
 git remote set-url origin https://<USERNAME>:<TOKEN>@github.com/<USERNAME>/<COLD_STORAGE_REPO>.git
 ```
 
----
+## Dev ideas
+- I would like to add a few features (access to past logs in window, more advanced text editing using nvim, editable content IRL)
 
 ## License
 
