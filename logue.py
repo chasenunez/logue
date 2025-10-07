@@ -52,41 +52,49 @@ def save_data(data: dict) -> None:
         json.dump(data, f, indent=2, ensure_ascii=False)
     git_commit_and_push()
 
-def git_commit_and_push() -> None:
-    try:
-        subprocess.run(["git", "init"], cwd=COLD_STORAGE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        remotes = subprocess.run(["git", "remote"], cwd=COLD_STORAGE_DIR, capture_output=True, text=True)
-        if "origin" not in remotes.stdout:
-            subprocess.run(["git", "remote", "add", "origin", COLD_REPO_URL], cwd=COLD_STORAGE_DIR)
+def git_commit_and_push():
+    """Safely add, commit, and push changes if any, without crashing on errors."""
+    import subprocess
+    import datetime
 
-        subprocess.run(
-            ["git", "add", str(LOGFILE.name)],
-            check=True,
-            cwd=COLD_STORAGE_DIR,
+    try:
+        # Stage all changes, including new files
+        subprocess.run(["git", "add", "--all"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        # Check if there are any changes at all (staged or unstaged)
+        diff_result = subprocess.run(
+            ["git", "diff", "--quiet", "HEAD"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        subprocess.run(
-            ["git", "commit", "-m", "logue: update"],
-            check=True,
-            cwd=COLD_STORAGE_DIR,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+
+        # If diff_result.returncode != 0, there are changes to commit
+        if diff_result.returncode != 0:
+            commit_msg = f"Auto log update {datetime.datetime.now().isoformat(timespec='seconds')}"
+            subprocess.run(
+                ["git", "commit", "-m", commit_msg],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+        # Try to push, but don’t crash if remote is unreachable
+        push_result = subprocess.run(
+            ["git", "push"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
-        subprocess.run(
-            ["git", "push", "-u", "origin", "main"],
-            check=True,
-            cwd=COLD_STORAGE_DIR,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"[WARN] Git operation failed: {e}", file=sys.stderr)
-        print(
-            "If authentication fails, ensure the remote repo exists and credentials are set.\n"
-            f"Remote URL: {COLD_REPO_URL}",
-            file=sys.stderr,
-        )
+
+        if push_result.returncode != 0:
+            # Log any push error to a local file for debugging
+            with open("git_push_error.log", "a") as f:
+                f.write(f"[{datetime.datetime.now()}] Git push failed:\n{push_result.stderr.decode()}\n")
+
+    except Exception as e:
+        # Fallback logging in case subprocess itself errors out
+        with open("git_push_error.log", "a") as f:
+            f.write(f"[{datetime.datetime.now()}] Git commit/push exception: {e}\n")
+
+
 
 # ------------ Helpers ------------
 def extract_tags(text: str) -> List[str]:
