@@ -210,48 +210,78 @@ def search_by_tag(tag: str) -> None:
         print(f"No entries found for tag #{tag}")
 
 # ------------ Catalogue UI helpers (NEW) ------------
-def sort_entries_newest_first(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    def key_fn(e):
-        ts = e.get("timestamp", "")
-        return ts
-    return sorted(entries, key=key_fn, reverse=True)
-
-def render_catalogue(stdscr, entries_sorted: List[Dict[str, Any]], sel_idx: int, top_idx: int, sidebar_w: int, height: int, attr_selected, attr_normal):
+# Replace sort_entries_newest_first with this function
+def group_entries_by_day(entries: List[Dict[str, Any]]) -> List[Tuple[str, List[Dict[str, Any]]]]:
     """
-    Draw the left sidebar showing entries. sel_idx is absolute index into entries_sorted.
-    top_idx is the index at the top of the visible window (for vertical scrolling).
+    Group entries by their YYYY_MM_DD day prefix.
+
+    Returns a list of tuples (day_str, entries_list) sorted newest day first.
+    Each entries_list is sorted newest-first (by timestamp).
+    day_str is the YYYY_MM_DD string used in the timestamp prefix.
+    """
+    # bucket by day prefix
+    buckets: Dict[str, List[Dict[str, Any]]] = {}
+    for e in entries:
+        ts = e.get("timestamp", "")
+        day = ts[:10] if len(ts) >= 10 else "unknown"
+        buckets.setdefault(day, []).append(e)
+
+    # sort entries within each day newest-first
+    for day, elist in buckets.items():
+        elist.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
+    # produce list of (day, entries) sorted by day (newest first)
+    days = sorted(buckets.items(), key=lambda kv: kv[0], reverse=True)
+    return days
+
+# Replace render_catalogue with this day-group aware version
+def render_catalogue(stdscr,
+                     days_list: List[Tuple[str, List[Dict[str, Any]]]],
+                     sel_idx: int,
+                     top_idx: int,
+                     sidebar_w: int,
+                     height: int,
+                     attr_selected,
+                     attr_normal):
+    """
+    Draw the left sidebar showing days. days_list is a list of (day_str, [entries]).
+    sel_idx is the selected day index. top_idx is the index at the top of view.
     """
     try:
-        # background / vertical separator
+        # clear sidebar area (simple background)
         for row in range(0, height):
             try:
-                stdscr.addch(row, 0, " ")
+                stdscr.addstr(row, 0, " " * max(1, sidebar_w))
             except curses.error:
                 pass
-        title = " Catalogue "
+
+        title = " Catalogue (by day) "
         try:
             stdscr.addstr(0, 1, title[: max(0, sidebar_w - 2)], curses.A_BOLD)
         except curses.error:
             pass
 
-        visible_h = height - 2  # allow title and bottom hint
-        for idx in range(top_idx, min(top_idx + visible_h, len(entries_sorted))):
+        visible_h = height - 2  # allow for title + bottom hint
+        for idx in range(top_idx, min(top_idx + visible_h, len(days_list))):
             row = 1 + (idx - top_idx)
-            e = entries_sorted[idx]
-            # get nice short timestamp/time
-            ts = e.get("timestamp", "")
-            time_str = ts.replace("_", " ")[0:16]  # YYYY MM DD HH:MM
-            preview = str(e.get("text", "")).splitlines()[0][: (sidebar_w - 18)] if e.get("text") else ""
-            line = f"{time_str:16} {preview}"
+            day_str, day_entries = days_list[idx]
+            count = len(day_entries)
+            # preview: first entry's first line (short)
+            preview = ""
+            if day_entries:
+                first = day_entries[0].get("text", "")
+                preview = first.splitlines()[0][: (sidebar_w - 20)]
+            # format day display: YYYY_MM_DD  (N)  preview...
+            display_day = f"{day_str:11} ({count:2}) {preview}"
             try:
                 if idx == sel_idx:
-                    stdscr.addstr(row, 1, line[: max(0, sidebar_w - 2)], attr_selected)
+                    stdscr.addstr(row, 1, display_day[: max(0, sidebar_w - 2)], attr_selected)
                 else:
-                    stdscr.addstr(row, 1, line[: max(0, sidebar_w - 2)], attr_normal)
+                    stdscr.addstr(row, 1, display_day[: max(0, sidebar_w - 2)], attr_normal)
             except curses.error:
                 pass
 
-        hint = "[Tab/F2 toggle | Enter view]"
+        hint = "[Tab/F2 toggle | Enter view day]"
         try:
             stdscr.addstr(height - 1, 1, hint[: max(0, sidebar_w - 2)], curses.A_DIM)
         except curses.error:
@@ -259,18 +289,24 @@ def render_catalogue(stdscr, entries_sorted: List[Dict[str, Any]], sel_idx: int,
     except Exception:
         pass
 
-def catalogue_navigation_loop(stdscr, entries_sorted: List[Dict[str, Any]], sidebar_w: int, height: int, start_sel: int):
+
+# Replace catalogue_navigation_loop with this day-aware version
+def catalogue_navigation_loop(stdscr,
+                              days_list: List[Tuple[str, List[Dict[str, Any]]]],
+                              sidebar_w: int,
+                              height: int,
+                              start_sel: int):
     """
-    Handles interactive navigation inside the Catalogue. Returns (new_selected_idx, viewed_idx, exit_flag).
-    - new_selected_idx: where selection ended when leaving catalogue
-    - viewed_idx: index of entry that was 'viewed' (Enter pressed), or None
+    Navigate the list of days. Returns (new_selected_day_idx, viewed_day_idx, exit_flag).
+    - new_selected_day_idx: final selection when leaving catalogue
+    - viewed_day_idx: index of day that was 'viewed' (Enter pressed), or None
     - exit_flag: True if user pressed ESC to quit entire program
     """
-    sel = max(0, min(start_sel, len(entries_sorted) - 1))
+    sel = max(0, min(start_sel, len(days_list) - 1)) if days_list else 0
     top = max(0, sel - (height // 2))
     viewed = None
 
-    # attributes for catalogue
+    # attributes
     if curses.has_colors():
         sel_attr = curses.color_pair(4) | curses.A_REVERSE
         normal_attr = curses.color_pair(4)
@@ -279,7 +315,7 @@ def catalogue_navigation_loop(stdscr, entries_sorted: List[Dict[str, Any]], side
         normal_attr = curses.A_NORMAL
 
     while True:
-        render_catalogue(stdscr, entries_sorted, sel, top, sidebar_w, height, sel_attr, normal_attr)
+        render_catalogue(stdscr, days_list, sel, top, sidebar_w, height, sel_attr, normal_attr)
         stdscr.refresh()
         ch = stdscr.getch()
         if ch in (9, curses.KEY_F2):  # toggle focus back to input
@@ -292,22 +328,23 @@ def catalogue_navigation_loop(stdscr, entries_sorted: List[Dict[str, Any]], side
             if sel < top:
                 top = sel
         elif ch in (curses.KEY_DOWN, ord('j')):
-            if sel < len(entries_sorted) - 1:
+            if sel < max(0, len(days_list) - 1):
                 sel += 1
             if sel >= top + (height - 2):
                 top = sel - (height - 3)
         elif ch == curses.KEY_NPAGE:  # Page Down
             jump = max(1, height - 4)
-            sel = min(len(entries_sorted) - 1, sel + jump)
-            top = min(max(0, len(entries_sorted) - (height - 2)), top + jump)
+            sel = min(max(0, len(days_list) - 1), sel + jump)
+            top = min(max(0, len(days_list) - (height - 2)), top + jump)
         elif ch == curses.KEY_PPAGE:  # Page Up
             jump = max(1, height - 4)
             sel = max(0, sel - jump)
             top = max(0, top - jump)
-        elif ch in (10, 13):  # Enter -> view this entry in main area
+        elif ch in (10, 13):  # Enter -> view this day in main area
             viewed = sel
-            # keep focus in catalogue; main loop will read viewed and show it
-        # else ignore / continue
+            # keep selection; allow repeated Enter to re-toggle view
+        # ignore other keys
+
 
 # ------------ Main UI ------------
 def interactive_mode(stdscr) -> None:
@@ -393,7 +430,8 @@ def interactive_mode(stdscr) -> None:
     # New state for Catalogue & viewing
     catalogue_focus = False
     selected_catalogue_index = 0
-    viewed_entry_index = None  # index into entries_sorted or None
+    viewed_day_index = None  # index into days_list or None
+
 
     # Main loop
     while True:
@@ -461,10 +499,12 @@ def interactive_mode(stdscr) -> None:
         entries = data.get("entries", [])
         tasks_map = data.get("tasks", {})
 
-        # Draw Catalogue (left pane)
-        entries_sorted = sort_entries_newest_first(entries)
+        # Draw Catalogue (left pane) - grouped by day
+        days_list = group_entries_by_day(entries)  # List[ (day_str, [entries]) ]
         catalogue_title = "Catalogue"
-        # attributes for catalogue and selection
+
+        # attributes for catalogue and selection — ensure these names are defined
+        # whether terminal supports colors or not
         if curses.has_colors():
             cat_title_attr = curses.color_pair(4) | curses.A_BOLD
             cat_sel_attr = curses.color_pair(4) | curses.A_REVERSE
@@ -474,12 +514,21 @@ def interactive_mode(stdscr) -> None:
             cat_sel_attr = curses.A_REVERSE
             cat_normal_attr = curses.A_NORMAL
 
-        # call render_catalogue helper to draw list
-        # ensure selected_catalogue_index valid
-        selected_catalogue_index = max(0, min(selected_catalogue_index, max(0, len(entries_sorted) - 1)))
-        # We'll manage top index inside render by giving a start near selected index
+        # ensure selected_catalogue_index is valid for days
+        selected_catalogue_index = max(0, min(selected_catalogue_index, max(0, len(days_list) - 1)))
         top_idx_guess = max(0, selected_catalogue_index - (height // 2))
-        render_catalogue(stdscr, entries_sorted, selected_catalogue_index, top_idx_guess, sidebar_w, height, cat_sel_attr, cat_normal_attr)
+
+        # finally render the catalogue (now with defined attributes)
+        render_catalogue(
+            stdscr,
+            days_list,
+            selected_catalogue_index,
+            top_idx_guess,
+            sidebar_w,
+            height,
+            cat_sel_attr,
+            cat_normal_attr,
+        )
 
         # Tasks for today (main)
         tasks_top = box_top + box_height + 1
@@ -514,37 +563,41 @@ def interactive_mode(stdscr) -> None:
         line = current_line + 1
         box_height_logs = max(0, height - line - 1)
 
-        # If a viewed entry (from catalogue) is set, display it fully; otherwise show today's entries
-        if viewed_entry_index is not None and 0 <= viewed_entry_index < len(entries_sorted):
-            entry = entries_sorted[viewed_entry_index]
+        # If a viewed day (from catalogue) is set, display all entries for that day; otherwise show today's entries
+        if 'viewed_day_index' in locals() and viewed_day_index is not None and 0 <= viewed_day_index < len(days_list):
+            day_str, day_entries = days_list[viewed_day_index]
+            # header
             try:
-                ts = datetime.datetime.strptime(entry["timestamp"], "%Y_%m_%d_%H_%M_%S")
-                time_str = ts.strftime("%Y-%m-%d %H:%M:%S")
-            except Exception:
-                time_str = entry.get("timestamp", "")
-            meta = f"{time_str}  {entry.get('location','')}"
-            try:
-                stdscr.addstr(line, left + 4, meta[: max(0, width - left - 6)], entries_attr | curses.A_BOLD)
+                stdscr.addstr(line, left + 4, f"Entries for {day_str} ({len(day_entries)})", entries_attr | curses.A_BOLD)
             except curses.error:
                 pass
             line += 1
-            tags = entry.get("tags", [])
-            if tags:
+            # show each entry (newest first)
+            for entry in day_entries[: max(0, box_height_logs - 1)]:
+                if line >= height - 1:
+                    break
                 try:
-                    stdscr.addstr(line, left + 4, f"Tags: {', '.join(tags)}", curses.A_DIM)
+                    ts = datetime.datetime.strptime(entry["timestamp"], "%Y_%m_%d_%H_%M_%S")
+                    time_str = ts.strftime("%H:%M:%S")
+                except Exception:
+                    time_str = entry.get("timestamp", "")[-8:-3]
+                try:
+                    stdscr.addstr(line, left + 4, f"{time_str}", entries_attr | curses.A_BOLD)
                 except curses.error:
                     pass
-                line += 1
-            wrapped = textwrap.wrap(str(entry.get("text", "")), max(10, width - left - 8))
-            for wl in wrapped[: max(0, box_height_logs - 1)]:
+                display = f" - {entry.get('text','')}"
+                wrap_width = max(10, width - (left + 14))
+                for wl in textwrap.wrap(display, wrap_width):
+                    if line < height - 1:
+                        try:
+                            stdscr.addstr(line, left + 12, wl, entries_attr)
+                        except curses.error:
+                            pass
+                        line += 1
+                    else:
+                        break
                 if line < height - 1:
-                    try:
-                        stdscr.addstr(line, left + 6, wl, entries_attr)
-                    except curses.error:
-                        pass
                     line += 1
-                else:
-                    break
         else:
             # Today's entries (original behavior)
             session_entries = [
@@ -578,6 +631,7 @@ def interactive_mode(stdscr) -> None:
                 if line < height - 1:
                     line += 1
 
+
         help_line = "Enter = submit entry | ESC = quit | Tab/F2 = Catalogue"
         try:
             stdscr.addstr(max(0, height - 1), max(left, 2), help_line[: max(0, width - left - 4)], curses.A_DIM)
@@ -588,16 +642,16 @@ def interactive_mode(stdscr) -> None:
 
         # Input or switch to Catalogue based on focus
         if catalogue_focus:
-            # open interactive catalogue navigation loop
-            sel, viewed, exit_flag = catalogue_navigation_loop(stdscr, entries_sorted, sidebar_w, height, selected_catalogue_index)
+            sel, viewed_day, exit_flag = catalogue_navigation_loop(stdscr, days_list, sidebar_w, height, selected_catalogue_index)
             selected_catalogue_index = sel
-            if viewed is not None:
-                viewed_entry_index = viewed
+            if viewed_day is not None:
+                # set the viewed day index (so main pane will show ALL entries for that day)
+                viewed_day_index = viewed_day
             if exit_flag:
                 break
-            # after leaving catalogue loop, return focus to input
             catalogue_focus = False
             continue
+
 
         # Entry input mode
         stdscr.attron(input_attr)
