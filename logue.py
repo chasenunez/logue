@@ -2,17 +2,9 @@
 """
 logue.py – Terminal logbook with Git integration.
 
-This is a patched version that fixes several issues found in the prior copy:
- - Fix incorrect indentation and stray `except` in the header/logo block.
- - Use the correct date variable when printing the header.
- - Make the entry box draw solidly (no right-side gap) where possible.
- - Make startup location prompt robust to ESC/cancel (don't call .strip() on None).
- - Fix typing for helper that returns both tasks and cleaned text.
- - General minor robustness: bounds-checked curses drawing, silent git calls,
-   and safe handling of narrow terminals.
- - Keeps the user's current features: tags with '#', tasks for tomorrow using '*',
-   tasks persisted under "tasks" keyed by YYYY_MM_DD, entries under "entries".
- - Fixes the date format in the User interface to not be so american so the haters will put their pitchforks away.
+Patched to add a left-hand Catalogue (sidebar) which lists all past entries
+and allows navigation and viewing of any entry. Use Tab or F2 to toggle focus
+between the entry input box and the Catalogue.
 """
 
 import argparse
@@ -22,7 +14,6 @@ import json
 import sys
 import re
 import subprocess
-import sys
 import textwrap
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -30,17 +21,16 @@ from typing import List, Dict, Any, Optional, Tuple
 # ------------ Config ------------
 TASKS_GAP = 1  # blank lines between today's tasks and tomorrow's header
 
-# ---------------- Paths ----------------
-# Program can be anywhere
-SCRIPT_DIR = Path(__file__).resolve().parent
+# token returned by input routine when user requests focus switch
+SWITCH_FOCUS_TOKEN = "__SWITCH_FOCUS__"
 
-# log_cold_storage directory
+# ---------------- Paths ----------------
+SCRIPT_DIR = Path(__file__).resolve().parent
 COLD_STORAGE_DIR = Path.home() / "Documents" / "log_cold_storage"
 COLD_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 LOGFILE = COLD_STORAGE_DIR / "logue.json"
 
-# Repository URL (used only if git remote isn't set)
-COLD_REPO_URL = "https://github.com/chasenunez/log_cold_storage.git" #Your cold storage repo goes here to keep your logs out of the public repo
+COLD_REPO_URL = "https://github.com/chasenunez/log_cold_storage.git"
 
 # ------------ Data storage ------------
 def load_data() -> dict:
@@ -61,27 +51,16 @@ def save_data(data: dict) -> None:
         json.dump(data, f, indent=2, ensure_ascii=False)
     git_commit_and_push()
 
-
-
-# ------------ Git (silent) ------------
 def git_commit_and_push() -> None:
-    """
-    Commit and push logue.json to the cold storage repo.
-    Assumes that the repo has been cloned and the remote origin set to COLD_REPO_URL.
-    """
     import subprocess
     import sys
 
     try:
-        # Ensure we are in the cold storage repo
         subprocess.run(["git", "init"], cwd=COLD_STORAGE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-        # Ensure remote origin exists
         remotes = subprocess.run(["git", "remote"], cwd=COLD_STORAGE_DIR, capture_output=True, text=True)
         if "origin" not in remotes.stdout:
             subprocess.run(["git", "remote", "add", "origin", COLD_REPO_URL], cwd=COLD_STORAGE_DIR)
 
-        # Add and commit the file
         subprocess.run(
             ["git", "add", str(LOGFILE.name)],
             check=True,
@@ -97,7 +76,7 @@ def git_commit_and_push() -> None:
             stderr=subprocess.DEVNULL,
         )
         subprocess.run(
-            ["git", "push", "-u", "origin", "main"],  # or "master" depending on your repo default branch
+            ["git", "push", "-u", "origin", "main"],
             check=True,
             cwd=COLD_STORAGE_DIR,
             stdout=subprocess.DEVNULL,
@@ -111,25 +90,16 @@ def git_commit_and_push() -> None:
             file=sys.stderr,
         )
 
-
-
 # ------------ Helpers ------------
 def extract_tags(text: str) -> List[str]:
     return [t.lower() for t in re.findall(r"#(\w+)", text)]
 
-
 def extract_tasks_and_clean_text(text: str) -> Tuple[List[str], str]:
-    """
-    Extract tasks with a leading '*' and return (tasks, cleaned_text).
-    Cleans removed task lines and any now-empty lines.
-    """
     tasks = re.findall(r"\*\s*([^\n\r]+)", text)
     cleaned = re.sub(r"\*\s*[^\n\r]+", "", text)
-    # Remove empty lines and trailing spaces from cleaned text
     cleaned = "\n".join([ln.rstrip() for ln in cleaned.splitlines() if ln.strip() != ""]).strip()
     tasks = [t.strip() for t in tasks if t.strip()]
     return tasks, cleaned
-
 
 def ordinal(n: int) -> str:
     if 11 <= n % 100 <= 13:
@@ -143,16 +113,16 @@ def ordinal(n: int) -> str:
     else:
         return f"{n}th"
 
-
 # ------------ Input (single-line editor) ------------
 def get_singleline_input(stdscr, y: int, x: int, max_width: int) -> Optional[str]:
     """
-    Single-line editor:
+    Single-line editor with:
       - Left/Right arrow navigation
       - Backspace/delete
-      - Horizontal scrolling if text longer than visible width (this is still not working as I would like, especially for tasks)
+      - Horizontal scrolling
       - Enter -> return the string
       - ESC -> return None (cancel)
+      - Tab or F2 -> return SWITCH_FOCUS_TOKEN to indicate user wants to switch focus (to Catalogue)
     """
     buffer: List[str] = []
     cursor_pos = 0
@@ -172,7 +142,6 @@ def get_singleline_input(stdscr, y: int, x: int, max_width: int) -> Optional[str
             stdscr.clrtoeol()
             stdscr.addstr(y, x, view)
         except curses.error:
-            # If we can't draw (very small terminal), just ignore draw errors
             pass
 
         cursor_col = x + max(0, cursor_pos - scroll)
@@ -181,7 +150,6 @@ def get_singleline_input(stdscr, y: int, x: int, max_width: int) -> Optional[str
         try:
             stdscr.move(y, cursor_col)
         except curses.error:
-            # fallback to nearest valid position
             try:
                 stdscr.move(max(0, min(max_y - 1, y)), max(0, cursor_col))
             except curses.error:
@@ -201,25 +169,23 @@ def get_singleline_input(stdscr, y: int, x: int, max_width: int) -> Optional[str
             cursor_pos -= 1
         elif ch == curses.KEY_RIGHT and cursor_pos < len(buffer):
             cursor_pos += 1
+        elif ch in (9, curses.KEY_F2):  # Tab or F2 => switch focus to catalogue
+            return SWITCH_FOCUS_TOKEN
         elif 32 <= ch <= 126:
             buffer.insert(cursor_pos, chr(ch))
             cursor_pos += 1
         # ignore other keys
 
-
 # ------------ Task utilities ------------
 def tasks_for_date(tasks_map: Dict[str, List[str]], date_str: str) -> List[str]:
     return tasks_map.get(date_str, [])
-
 
 def add_task_for_date(tasks_map: Dict[str, List[str]], date_str: str, task: str) -> None:
     if not task:
         return
     tasks_map.setdefault(date_str, []).append(task)
 
-
 # ------------ CLI search helpers ------------
-# EK has the idea of implementing a grep search over the whole file which I am on board with but haven't impemented yet. 
 def search_by_date(date_prefix: str) -> None:
     data = load_data()
     entries = data.get("entries", [])
@@ -232,7 +198,6 @@ def search_by_date(date_prefix: str) -> None:
     else:
         print(f"No entries found for {date_prefix}")
 
-
 def search_by_tag(tag: str) -> None:
     data = load_data()
     entries = data.get("entries", [])
@@ -244,10 +209,108 @@ def search_by_tag(tag: str) -> None:
     else:
         print(f"No entries found for tag #{tag}")
 
+# ------------ Catalogue UI helpers (NEW) ------------
+def sort_entries_newest_first(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def key_fn(e):
+        ts = e.get("timestamp", "")
+        return ts
+    return sorted(entries, key=key_fn, reverse=True)
+
+def render_catalogue(stdscr, entries_sorted: List[Dict[str, Any]], sel_idx: int, top_idx: int, sidebar_w: int, height: int, attr_selected, attr_normal):
+    """
+    Draw the left sidebar showing entries. sel_idx is absolute index into entries_sorted.
+    top_idx is the index at the top of the visible window (for vertical scrolling).
+    """
+    try:
+        # background / vertical separator
+        for row in range(0, height):
+            try:
+                stdscr.addch(row, 0, " ")
+            except curses.error:
+                pass
+        title = " Catalogue "
+        try:
+            stdscr.addstr(0, 1, title[: max(0, sidebar_w - 2)], curses.A_BOLD)
+        except curses.error:
+            pass
+
+        visible_h = height - 2  # allow title and bottom hint
+        for idx in range(top_idx, min(top_idx + visible_h, len(entries_sorted))):
+            row = 1 + (idx - top_idx)
+            e = entries_sorted[idx]
+            # get nice short timestamp/time
+            ts = e.get("timestamp", "")
+            time_str = ts.replace("_", " ")[0:16]  # YYYY MM DD HH:MM
+            preview = str(e.get("text", "")).splitlines()[0][: (sidebar_w - 18)] if e.get("text") else ""
+            line = f"{time_str:16} {preview}"
+            try:
+                if idx == sel_idx:
+                    stdscr.addstr(row, 1, line[: max(0, sidebar_w - 2)], attr_selected)
+                else:
+                    stdscr.addstr(row, 1, line[: max(0, sidebar_w - 2)], attr_normal)
+            except curses.error:
+                pass
+
+        hint = "[Tab/F2 toggle | Enter view]"
+        try:
+            stdscr.addstr(height - 1, 1, hint[: max(0, sidebar_w - 2)], curses.A_DIM)
+        except curses.error:
+            pass
+    except Exception:
+        pass
+
+def catalogue_navigation_loop(stdscr, entries_sorted: List[Dict[str, Any]], sidebar_w: int, height: int, start_sel: int):
+    """
+    Handles interactive navigation inside the Catalogue. Returns (new_selected_idx, viewed_idx, exit_flag).
+    - new_selected_idx: where selection ended when leaving catalogue
+    - viewed_idx: index of entry that was 'viewed' (Enter pressed), or None
+    - exit_flag: True if user pressed ESC to quit entire program
+    """
+    sel = max(0, min(start_sel, len(entries_sorted) - 1))
+    top = max(0, sel - (height // 2))
+    viewed = None
+
+    # attributes for catalogue
+    if curses.has_colors():
+        sel_attr = curses.color_pair(4) | curses.A_REVERSE
+        normal_attr = curses.color_pair(4)
+    else:
+        sel_attr = curses.A_REVERSE
+        normal_attr = curses.A_NORMAL
+
+    while True:
+        render_catalogue(stdscr, entries_sorted, sel, top, sidebar_w, height, sel_attr, normal_attr)
+        stdscr.refresh()
+        ch = stdscr.getch()
+        if ch in (9, curses.KEY_F2):  # toggle focus back to input
+            return sel, viewed, False
+        elif ch in (27,):  # ESC -> quit entire app
+            return sel, viewed, True
+        elif ch in (curses.KEY_UP, ord('k')):
+            if sel > 0:
+                sel -= 1
+            if sel < top:
+                top = sel
+        elif ch in (curses.KEY_DOWN, ord('j')):
+            if sel < len(entries_sorted) - 1:
+                sel += 1
+            if sel >= top + (height - 2):
+                top = sel - (height - 3)
+        elif ch == curses.KEY_NPAGE:  # Page Down
+            jump = max(1, height - 4)
+            sel = min(len(entries_sorted) - 1, sel + jump)
+            top = min(max(0, len(entries_sorted) - (height - 2)), top + jump)
+        elif ch == curses.KEY_PPAGE:  # Page Up
+            jump = max(1, height - 4)
+            sel = max(0, sel - jump)
+            top = max(0, top - jump)
+        elif ch in (10, 13):  # Enter -> view this entry in main area
+            viewed = sel
+            # keep focus in catalogue; main loop will read viewed and show it
+        # else ignore / continue
 
 # ------------ Main UI ------------
 def interactive_mode(stdscr) -> None:
-    # Set terminal/tab title
     try:
         sys.stdout.write("\x1b]2;logue\x07")
         sys.stdout.flush()
@@ -258,10 +321,9 @@ def interactive_mode(stdscr) -> None:
     curses.noecho()
     stdscr.keypad(True)
 
-    # Colors and attributes:
     if curses.has_colors():
         curses.start_color()
-        curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)    # tasks today
+        curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)  # tasks today
         curses.init_pair(2, curses.COLOR_YELLOW, curses.COLOR_BLACK)  # tasks tomorrow
         curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK)   # entries
         curses.init_pair(4, curses.COLOR_WHITE, curses.COLOR_BLACK)   # header/label/input
@@ -284,16 +346,12 @@ def interactive_mode(stdscr) -> None:
         entries_attr = entries_title_attr = curses.A_BOLD
         header_attr = label_attr = input_attr = curses.A_NORMAL
 
-    # Load data
     data = load_data()
     entries: List[Dict[str, Any]] = data.get("entries", [])
-    # tasks_map will be re-read each loop from data to reflect updates
-    # Startup location prompt
+
     stdscr.clear()
     height, width = stdscr.getmaxyx()
 
-    # i mean how cool is this? very 90's. it is a TOIlet font called "future", but there were a ton of good options that I could have gone with here: https://patorjk.com/software/taag/#p=display&f=Graffiti&t=Type+Something+&x=none&v=4&h=4&w=80&we=false
-    # 
     logo_lines = [
         "╻  ┏━┓┏━╸╻ ╻┏━╸",
         "┃  ┃ ┃┃╺┓┃ ┃┣╸ ",
@@ -303,7 +361,6 @@ def interactive_mode(stdscr) -> None:
         try:
             stdscr.addstr(i + 1, max(0, (width - len(line)) // 2), line, header_attr)
         except curses.error:
-            # ignore if terminal too narrow
             pass
 
     prompt_loc = "enter location: "
@@ -327,21 +384,29 @@ def interactive_mode(stdscr) -> None:
         underscore = raw.replace(" ", "_")
         location_tags = [raw] if raw == underscore else [raw, underscore]
 
-    # Date strings
     today_date = datetime.date.today()
     today_str = today_date.strftime("%Y_%m_%d")
     tomorrow_date = today_date + datetime.timedelta(days=1)
     tomorrow_str = tomorrow_date.strftime("%Y_%m_%d")
     date_str_pretty = f"{ordinal(today_date.day)} {today_date.strftime('%B')} {today_date.year}"
 
+    # New state for Catalogue & viewing
+    catalogue_focus = False
+    selected_catalogue_index = 0
+    viewed_entry_index = None  # index into entries_sorted or None
+
     # Main loop
     while True:
         stdscr.clear()
         height, width = stdscr.getmaxyx()
-        left = 2
+
+        # Sidebar width about 1/3
+        sidebar_w = max(20, width // 3)
+        main_left = sidebar_w + 2  # main content starts after sidebar + separator
+        left = main_left
         right = 2
 
-        # Header block: logo left, date+location right
+        # Header block (draw in main area)
         header_height = len(logo_lines)
         for i, line in enumerate(logo_lines):
             try:
@@ -353,16 +418,18 @@ def interactive_mode(stdscr) -> None:
         if location:
             date_line += f"  {location}"
         try:
-            # print date_line on the top-right, try first row then second if collision
-            stdscr.addstr(0, max(0, width - len(date_line) - 2), date_line, header_attr)
+            stdscr.addstr(0, max(left, width - len(date_line) - 2), date_line, header_attr)
         except curses.error:
-            try:
-                stdscr.addstr(1, max(0, width - len(date_line) - 2), date_line, header_attr)
-            except curses.error:
-                pass
+            pass
 
-        # Entry box (white)
-        # I have tried to find a way to fix the "space" at the right hand side of the box for many moons and can't figure it out. but it is mostly aesthetic, so it persists. But kudos to anyone that can fix it. 
+        # Draw vertical separator line between sidebar and main
+        try:
+            for r in range(0, height):
+                stdscr.addch(r, sidebar_w, curses.ACS_VLINE)
+        except curses.error:
+            pass
+
+        # Entry box (main area)
         box_top = header_height + 1
         box_left = left
         box_width = max(30, width - left - right)
@@ -377,10 +444,9 @@ def interactive_mode(stdscr) -> None:
             stdscr.hline(box_top + box_height - 1, box_left + 1, curses.ACS_HLINE, max(0, box_width - 2))
             stdscr.addch(box_top + box_height - 1, box_left + box_width - 1, curses.ACS_LRCORNER)
         except curses.error:
-            # If ACS_* drawing fails, ignore — terminal might not support it or be too small
             pass
 
-        prompt_text = "Entry: " #Log Something; New Entry; etc. 
+        prompt_text = "Entry: "
         entry_y = box_top + 1
         prompt_x = box_left + 2
         entry_x = prompt_x + len(prompt_text)
@@ -390,15 +456,35 @@ def interactive_mode(stdscr) -> None:
             pass
         entry_visible_width = max(10, box_left + box_width - entry_x - 2)
 
-        # Tasks and entries sections
-        tasks_top = box_top + box_height + 1
-        current_line = tasks_top
-
-        data = load_data()  # reload so any external edits are visible
+        # reload data for latest
+        data = load_data()
         entries = data.get("entries", [])
         tasks_map = data.get("tasks", {})
 
-        # Tasks for today
+        # Draw Catalogue (left pane)
+        entries_sorted = sort_entries_newest_first(entries)
+        catalogue_title = "Catalogue"
+        # attributes for catalogue and selection
+        if curses.has_colors():
+            cat_title_attr = curses.color_pair(4) | curses.A_BOLD
+            cat_sel_attr = curses.color_pair(4) | curses.A_REVERSE
+            cat_normal_attr = curses.color_pair(4)
+        else:
+            cat_title_attr = curses.A_BOLD
+            cat_sel_attr = curses.A_REVERSE
+            cat_normal_attr = curses.A_NORMAL
+
+        # call render_catalogue helper to draw list
+        # ensure selected_catalogue_index valid
+        selected_catalogue_index = max(0, min(selected_catalogue_index, max(0, len(entries_sorted) - 1)))
+        # We'll manage top index inside render by giving a start near selected index
+        top_idx_guess = max(0, selected_catalogue_index - (height // 2))
+        render_catalogue(stdscr, entries_sorted, selected_catalogue_index, top_idx_guess, sidebar_w, height, cat_sel_attr, cat_normal_attr)
+
+        # Tasks for today (main)
+        tasks_top = box_top + box_height + 1
+        current_line = tasks_top
+
         if current_line < height - 1:
             try:
                 stdscr.addstr(current_line, left, "  Tasks for today:", tasks_today_title_attr)
@@ -416,87 +502,104 @@ def interactive_mode(stdscr) -> None:
             else:
                 break
 
-        # vertical gap
         for _ in range(TASKS_GAP):
             if current_line < height - 1:
                 current_line += 1
 
-        # Tasks for tomorrow
         if current_line < height - 1:
             try:
-                stdscr.addstr(current_line, left, "  Tasks for tomorrow:", tasks_tomorrow_title_attr)
+                stdscr.addstr(current_line, left, "  Entries:", entries_title_attr)
             except curses.error:
                 pass
-            current_line += 1
-
-        tom_tasks = tasks_for_date(tasks_map, tomorrow_str)
-        for t in tom_tasks:
-            if current_line < height - 1:
-                try:
-                    stdscr.addstr(current_line, left + 4, f"- {t}", tasks_tomorrow_attr)
-                except curses.error:
-                    pass
-                current_line += 1
-            else:
-                break
-
-        # spacer before entries
-        if current_line < height - 1:
-            current_line += 1
-
-        # Today's entries
-        entries_start = current_line
-        if entries_start < height - 1:
-            try:
-                stdscr.addstr(entries_start, left, "  Today's entries:", entries_title_attr)
-            except curses.error:
-                pass
-        line = entries_start + 1
+        line = current_line + 1
         box_height_logs = max(0, height - line - 1)
 
-        session_entries = [
-            e
-            for e in entries
-            if e.get("timestamp", "").startswith(today_str) and str(e.get("text", "")).strip() != ""
-        ]
-
-        for entry in reversed(session_entries[-(box_height_logs - 1) :]):
-            if line >= height - 1:
-                break
+        # If a viewed entry (from catalogue) is set, display it fully; otherwise show today's entries
+        if viewed_entry_index is not None and 0 <= viewed_entry_index < len(entries_sorted):
+            entry = entries_sorted[viewed_entry_index]
             try:
                 ts = datetime.datetime.strptime(entry["timestamp"], "%Y_%m_%d_%H_%M_%S")
-                time_str = ts.strftime("%H:%M")
+                time_str = ts.strftime("%Y-%m-%d %H:%M:%S")
             except Exception:
-                time_str = entry.get("timestamp", "")[-8:-3]
-            # time (bold + color)
+                time_str = entry.get("timestamp", "")
+            meta = f"{time_str}  {entry.get('location','')}"
             try:
-                stdscr.addstr(line, left + 4, f"{time_str}", entries_attr | curses.A_BOLD)
+                stdscr.addstr(line, left + 4, meta[: max(0, width - left - 6)], entries_attr | curses.A_BOLD)
             except curses.error:
                 pass
-            display = f" - {entry.get('text','')}"
-            wrap_width = max(10, width - (left + 14))
-            for wl in textwrap.wrap(display, wrap_width):
+            line += 1
+            tags = entry.get("tags", [])
+            if tags:
+                try:
+                    stdscr.addstr(line, left + 4, f"Tags: {', '.join(tags)}", curses.A_DIM)
+                except curses.error:
+                    pass
+                line += 1
+            wrapped = textwrap.wrap(str(entry.get("text", "")), max(10, width - left - 8))
+            for wl in wrapped[: max(0, box_height_logs - 1)]:
                 if line < height - 1:
                     try:
-                        stdscr.addstr(line, left + 12, wl, entries_attr)
+                        stdscr.addstr(line, left + 6, wl, entries_attr)
                     except curses.error:
                         pass
                     line += 1
                 else:
                     break
-            if line < height - 1:
-                line += 1
+        else:
+            # Today's entries (original behavior)
+            session_entries = [
+                e
+                for e in entries
+                if e.get("timestamp", "").startswith(today_str) and str(e.get("text", "")).strip() != ""
+            ]
+            for entry in reversed(session_entries[-(box_height_logs - 1) :]):
+                if line >= height - 1:
+                    break
+                try:
+                    ts = datetime.datetime.strptime(entry["timestamp"], "%Y_%m_%d_%H_%M_%S")
+                    time_str = ts.strftime("%H:%M")
+                except Exception:
+                    time_str = entry.get("timestamp", "")[-8:-3]
+                try:
+                    stdscr.addstr(line, left + 4, f"{time_str}", entries_attr | curses.A_BOLD)
+                except curses.error:
+                    pass
+                display = f" - {entry.get('text','')}"
+                wrap_width = max(10, width - (left + 14))
+                for wl in textwrap.wrap(display, wrap_width):
+                    if line < height - 1:
+                        try:
+                            stdscr.addstr(line, left + 12, wl, entries_attr)
+                        except curses.error:
+                            pass
+                        line += 1
+                    else:
+                        break
+                if line < height - 1:
+                    line += 1
 
-        # status/help line (dim)
-        help_line = "Enter = submit entry | ESC = quit"
+        help_line = "Enter = submit entry | ESC = quit | Tab/F2 = Catalogue"
         try:
-            stdscr.addstr(max(0, height - 1), 2, help_line[: max(0, width - 4)], curses.A_DIM)
+            stdscr.addstr(max(0, height - 1), max(left, 2), help_line[: max(0, width - left - 4)], curses.A_DIM)
         except curses.error:
             pass
 
         stdscr.refresh()
 
-        # Input
+        # Input or switch to Catalogue based on focus
+        if catalogue_focus:
+            # open interactive catalogue navigation loop
+            sel, viewed, exit_flag = catalogue_navigation_loop(stdscr, entries_sorted, sidebar_w, height, selected_catalogue_index)
+            selected_catalogue_index = sel
+            if viewed is not None:
+                viewed_entry_index = viewed
+            if exit_flag:
+                break
+            # after leaving catalogue loop, return focus to input
+            catalogue_focus = False
+            continue
+
+        # Entry input mode
         stdscr.attron(input_attr)
         note = get_singleline_input(stdscr, entry_y, entry_x, entry_visible_width)
         stdscr.attroff(input_attr)
@@ -504,11 +607,15 @@ def interactive_mode(stdscr) -> None:
         if note is None:
             break
 
-        if note == "":
-            # ignore empty entries (do not save nor push)
+        if note == SWITCH_FOCUS_TOKEN:
+            # switch to catalogue focus
+            catalogue_focus = True
             continue
 
-        # Extract tasks and cleaned note
+        if note == "":
+            # ignore empty entries
+            continue
+
         tasks, cleaned_note = extract_tasks_and_clean_text(note)
 
         now_exact = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
@@ -521,7 +628,6 @@ def interactive_mode(stdscr) -> None:
         entries.append(new_entry)
         data["entries"] = entries
 
-        # If tasks found, add them to tomorrow
         if tasks:
             tasks_map = data.get("tasks", {})
             for t in tasks:
@@ -529,10 +635,8 @@ def interactive_mode(stdscr) -> None:
             data["tasks"] = tasks_map
 
         save_data(data)
-        # Try to commit & push; keep UI quiet by running it in background for responsiveness is an option,
-        # but for now we run it synchronously but silent to stdout/stderr.
+        # preserve original behavior (attempt push)
         git_commit_and_push()
-
 
 # ------------ Main ------------
 def main():
@@ -549,7 +653,6 @@ def main():
         return
 
     curses.wrapper(interactive_mode)
-
 
 if __name__ == "__main__":
     main()
