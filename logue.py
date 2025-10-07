@@ -53,46 +53,51 @@ def save_data(data: dict) -> None:
     git_commit_and_push()
 
 def git_commit_and_push():
-    """Safely add, commit, and push changes if any, without crashing on errors."""
+    """Add, commit, and push changes to the GitHub repo, if any changes exist."""
     import subprocess
     import datetime
+    from pathlib import Path
+
+    repo_path = Path.cwd()
 
     try:
-        # Stage all changes, including new files
-        subprocess.run(["git", "add", "--all"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Make sure we're in the correct directory
+        subprocess.run(["git", "-C", str(repo_path), "add", "."], check=False)
 
-        # Check if there are any changes at all (staged or unstaged)
-        diff_result = subprocess.run(
-            ["git", "diff", "--quiet", "HEAD"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+        # Check if there are *any* changes to commit (staged or unstaged)
+        diff_check = subprocess.run(
+            ["git", "-C", str(repo_path), "diff", "--quiet", "--ignore-submodules", "--exit-code"]
+        )
+        diff_cached_check = subprocess.run(
+            ["git", "-C", str(repo_path), "diff", "--cached", "--quiet", "--ignore-submodules", "--exit-code"]
         )
 
-        # If diff_result.returncode != 0, there are changes to commit
-        if diff_result.returncode != 0:
-            commit_msg = f"Auto log update {datetime.datetime.now().isoformat(timespec='seconds')}"
+        if diff_check.returncode != 0 or diff_cached_check.returncode != 0:
+            # There are changes to commit
             subprocess.run(
-                ["git", "commit", "-m", commit_msg],
+                ["git", "-C", str(repo_path), "commit", "-am", "Auto log update"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                check=False,
             )
 
-        # Try to push, but don’t crash if remote is unreachable
-        push_result = subprocess.run(
-            ["git", "push"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-
-        if push_result.returncode != 0:
-            # Log any push error to a local file for debugging
-            with open("git_push_error.log", "a") as f:
-                f.write(f"[{datetime.datetime.now()}] Git push failed:\n{push_result.stderr.decode()}\n")
+            # Attempt to push
+            subprocess.run(
+                ["git", "-C", str(repo_path), "push"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        else:
+            # No changes, nothing to commit
+            pass
 
     except Exception as e:
-        # Fallback logging in case subprocess itself errors out
-        with open("git_push_error.log", "a") as f:
-            f.write(f"[{datetime.datetime.now()}] Git commit/push exception: {e}\n")
+        try:
+            with open("git_push_error.log", "a") as f:
+                f.write(f"[{datetime.datetime.now()}] Git push failed: {e}\n")
+        except Exception:
+            pass
 
 
 
