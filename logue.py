@@ -52,52 +52,88 @@ def save_data(data: dict) -> None:
         json.dump(data, f, indent=2, ensure_ascii=False)
     git_commit_and_push()
 
-def git_commit_and_push():
-    """Add, commit, and push changes to the GitHub repo, if any changes exist."""
+def git_commit_and_push() -> None:
+    """
+    Robust, non-crashing commit & push for the cold-storage repo.
+
+    Behavior:
+      - Operates in COLD_STORAGE_DIR (not the program's cwd).
+      - Ensures 'origin' remote exists (adds it if missing).
+      - Stages LOGFILE.name, checks `git status --porcelain`.
+      - If there are changes, commits with a timestamped message and pushes.
+      - All git stdout/stderr and any exceptions are appended to git_push_error.log
+        so you can inspect why a push might have failed.
+    """
     import subprocess
     import datetime
     from pathlib import Path
 
-    repo_path = Path.cwd()
+    repo_dir = str(COLD_STORAGE_DIR)
+    logfile_name = str(LOGFILE.name)
+    timestamp = datetime.datetime.now().isoformat(timespec="seconds")
+    log_path = Path(repo_dir) / "git_push_error.log"
+
+    def _append_log(msg: str) -> None:
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.datetime.now().isoformat()}] {msg}\n")
+        except Exception:
+            # best-effort only; don't raise
+            pass
 
     try:
-        # Make sure we're in the correct directory
-        subprocess.run(["git", "-C", str(repo_path), "add", "."], check=False)
+        # Ensure repo exists & is initialized
+        init_proc = subprocess.run(["git", "init"], cwd=repo_dir, capture_output=True, text=True)
+        _append_log(f"git init: rc={init_proc.returncode} out={init_proc.stdout.strip()} err={init_proc.stderr.strip()}")
 
-        # Check if there are *any* changes to commit (staged or unstaged)
-        diff_check = subprocess.run(
-            ["git", "-C", str(repo_path), "diff", "--quiet", "--ignore-submodules", "--exit-code"]
-        )
-        diff_cached_check = subprocess.run(
-            ["git", "-C", str(repo_path), "diff", "--cached", "--quiet", "--ignore-submodules", "--exit-code"]
-        )
+        # Ensure remote origin exists
+        remotes_proc = subprocess.run(["git", "remote", "-v"], cwd=repo_dir, capture_output=True, text=True)
+        _append_log(f"git remote -v: rc={remotes_proc.returncode} out={remotes_proc.stdout.strip()} err={remotes_proc.stderr.strip()}")
+        if "origin" not in remotes_proc.stdout:
+            add_remote_proc = subprocess.run(["git", "remote", "add", "origin", COLD_REPO_URL], cwd=repo_dir, capture_output=True, text=True)
+            _append_log(f"git remote add origin: rc={add_remote_proc.returncode} out={add_remote_proc.stdout.strip()} err={add_remote_proc.stderr.strip()}")
 
-        if diff_check.returncode != 0 or diff_cached_check.returncode != 0:
-            # There are changes to commit
-            subprocess.run(
-                ["git", "-C", str(repo_path), "commit", "-am", "Auto log update"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
+        # Stage the log file explicitly
+        add_proc = subprocess.run(["git", "add", logfile_name], cwd=repo_dir, capture_output=True, text=True)
+        _append_log(f"git add {logfile_name}: rc={add_proc.returncode} out={add_proc.stdout.strip()} err={add_proc.stderr.strip()}")
 
-            # Attempt to push
-            subprocess.run(
-                ["git", "-C", str(repo_path), "push"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
-        else:
-            # No changes, nothing to commit
-            pass
+        # Check if there are any changes to commit (staged or unstaged)
+        status_proc = subprocess.run(["git", "status", "--porcelain"], cwd=repo_dir, capture_output=True, text=True)
+        _append_log(f"git status --porcelain: rc={status_proc.returncode} out={status_proc.stdout.strip()}")
 
-    except Exception as e:
-        try:
-            with open("git_push_error.log", "a") as f:
-                f.write(f"[{datetime.datetime.now()}] Git push failed: {e}\n")
-        except Exception:
-            pass
+        if status_proc.returncode != 0:
+            _append_log("git status returned non-zero; skipping commit/push.")
+            return
+
+        if status_proc.stdout.strip() == "":
+            # No changes detected
+            _append_log("No changes to commit (porcelain empty).")
+            return
+
+        # Determine current branch (fallback to main)
+        branch_proc = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_dir, capture_output=True, text=True)
+        branch = branch_proc.stdout.strip() if branch_proc.returncode == 0 and branch_proc.stdout.strip() else "main"
+        _append_log(f"current branch: {branch}")
+
+        # Commit changes (use explicit message)
+        commit_msg = f"Auto log update {timestamp}"
+        commit_proc = subprocess.run(["git", "commit", "-m", commit_msg], cwd=repo_dir, capture_output=True, text=True)
+        _append_log(f"git commit: rc={commit_proc.returncode} out={commit_proc.stdout.strip()} err={commit_proc.stderr.strip()}")
+
+        # If commit failed (non-zero rc) log and continue (do not crash)
+        if commit_proc.returncode != 0:
+            # If commit failed because nothing to commit, that's ok; otherwise log the error
+            _append_log("Commit returned non-zero (no commit performed or error).")
+
+        # Push to origin on the detected branch (set upstream if needed)
+        push_proc = subprocess.run(["git", "push", "-u", "origin", branch], cwd=repo_dir, capture_output=True, text=True)
+        _append_log(f"git push: rc={push_proc.returncode} out={push_proc.stdout.strip()} err={push_proc.stderr.strip()}")
+
+        if push_proc.returncode != 0:
+            _append_log("Push failed (see stderr above).")
+    except Exception as ex:
+        _append_log(f"Exception in git_commit_and_push: {ex}")
+
 
 
 
