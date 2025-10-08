@@ -387,7 +387,7 @@ def interactive_mode(stdscr) -> None:
     today_str = today_date.strftime("%Y_%m_%d")
     tomorrow_date = today_date + datetime.timedelta(days=1)
     tomorrow_str = tomorrow_date.strftime("%Y_%m_%d")
-    date_str_pretty = f"{ordinal(today_date.day)} {today_date.strftime('%B')} {today_date.year}"
+    date_str_pretty = f"{ordinal(today_date.day)} {today_date.strftime('%B')} {today_date.year} at"
 
     # State
     catalogue_focus = False
@@ -487,7 +487,7 @@ def interactive_mode(stdscr) -> None:
         # Draw date on the top line using date_attr (can include underline)
         date_line = date_str_pretty
         if location:
-            date_line += f"  {location}"
+            date_line += f" {location}"
         try:
             stdscr.addstr(0, max(left, width - len(date_line) - 2), date_line, date_attr)
         except curses.error:
