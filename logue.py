@@ -134,9 +134,6 @@ def git_commit_and_push() -> None:
     except Exception as ex:
         _append_log(f"Exception in git_commit_and_push: {ex}")
 
-
-
-
 # ------------ Helpers ------------
 def extract_tags(text: str) -> List[str]:
     return [t.lower() for t in re.findall(r"#(\w+)", text)]
@@ -260,15 +257,63 @@ def search_by_tag(tag: str) -> None:
         print(f"No entries found for tag #{tag}")
 
 # ------------ Catalogue helpers ------------
+def _parse_timestamp_to_date(ts: str) -> Optional[datetime.date]:
+    """
+    Try to parse several common timestamp formats into a date object.
+    Falls back to None if parsing fails.
+    """
+    if not ts or not isinstance(ts, str):
+        return None
+    fmts = [
+        "%Y_%m_%d_%H_%M_%S",  # default format used by this program
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y_%m_%d",  # sometimes only a date was stored
+        "%Y-%m-%d",
+    ]
+    for f in fmts:
+        try:
+            return datetime.datetime.strptime(ts, f).date()
+        except Exception:
+            continue
+    # as final fallback, try to extract first 10 characters and replace '-' with '_'
+    try:
+        raw = ts[:10].replace("-", "_")
+        return datetime.datetime.strptime(raw, "%Y_%m_%d").date()
+    except Exception:
+        return None
+
 def group_entries_by_day(entries: List[Dict[str, Any]]) -> List[Tuple[str, List[Dict[str, Any]]]]:
+    """
+    Group entries by day (normalized to YYYY_MM_DD). This function is robust to different
+    timestamp formats that might be present in older entries. The returned list is sorted
+    by date descending (newest first).
+    """
     buckets: Dict[str, List[Dict[str, Any]]] = {}
     for e in entries:
         ts = e.get("timestamp", "")
-        day = ts[:10] if len(ts) >= 10 else "unknown"
+        date_obj = _parse_timestamp_to_date(ts)
+        if date_obj is None:
+            day = "unknown"
+        else:
+            day = date_obj.strftime("%Y_%m_%d")
         buckets.setdefault(day, []).append(e)
+
+    # sort entries within each day newest first
     for day, elist in buckets.items():
         elist.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-    days = sorted(buckets.items(), key=lambda kv: kv[0], reverse=True)
+
+    # sort days by parsed date descending, but ensure 'unknown' goes last
+    def day_sort_key(item):
+        day_key = item[0]
+        if day_key == "unknown":
+            return datetime.date.min
+        try:
+            return datetime.datetime.strptime(day_key, "%Y_%m_%d").date()
+        except Exception:
+            return datetime.date.min
+
+    days = sorted(buckets.items(), key=day_sort_key, reverse=True)
     return days
 
 def render_catalogue(stdscr,
@@ -298,6 +343,8 @@ def render_catalogue(stdscr,
             pass
 
         visible_h = max(0, height - 2)
+        # clamp top_idx to valid range
+        top_idx = max(0, min(top_idx, max(0, len(days_list) - visible_h)))
         for idx in range(top_idx, min(top_idx + visible_h, len(days_list))):
             row = 1 + (idx - top_idx)
             day_str, day_entries = days_list[idx]
@@ -359,9 +406,6 @@ def interactive_mode(stdscr) -> None:
         entries_attr = curses.color_pair(3)
         entries_title_attr = curses.color_pair(3) | curses.A_BOLD
 
-        # Separate attributes for logo and date:
-        # - logo_attr: bold only (no underline) so box-drawing characters aren't underlined
-        # - date_attr: bold + underline (optional) for the top-line date
         logo_attr = curses.color_pair(4) | curses.A_BOLD
         date_attr = curses.color_pair(4) | curses.A_BOLD | curses.A_UNDERLINE
         label_attr = curses.color_pair(4)
@@ -399,7 +443,7 @@ def interactive_mode(stdscr) -> None:
     entries = data.get("entries", [])
     tasks_map = data.get("tasks", {})
 
-        # prompt for location once before entering main loop — draw logo centered, prompt centered
+    # prompt for location once before entering main loop — draw logo centered, prompt centered
     stdscr.clear()
     maxy, maxx = stdscr.getmaxyx()
     # draw logo centered using logo_attr
@@ -455,7 +499,10 @@ def interactive_mode(stdscr) -> None:
         # grouped days
         days_list = group_entries_by_day(entries)
         selected_catalogue_index = max(0, min(selected_catalogue_index, max(0, len(days_list) - 1)))
+        visible_h = max(0, height - 2)
         top_idx_guess = max(0, selected_catalogue_index - (height // 2))
+        # clamp top_idx so the renderer always receives a valid window
+        top_idx_clamped = max(0, min(top_idx_guess, max(0, len(days_list) - visible_h)))
 
         # catalogue attributes
         if curses.has_colors():
@@ -466,7 +513,7 @@ def interactive_mode(stdscr) -> None:
             cat_normal_attr = curses.A_NORMAL
 
         # Draw catalogue (left) — this writes only in columns 0..sidebar_w-1
-        render_catalogue(stdscr, days_list, selected_catalogue_index, top_idx_guess, sidebar_w, height, cat_sel_attr, cat_normal_attr)
+        render_catalogue(stdscr, days_list, selected_catalogue_index, top_idx_clamped, sidebar_w, height, cat_sel_attr, cat_normal_attr)
 
         # vertical separator
         try:
@@ -676,7 +723,10 @@ def interactive_mode(stdscr) -> None:
                 elif ch in (10, 13):  # Enter -> view selected day
                     viewed_day_index = selected_catalogue_index
                 # Re-render only the catalogue portion to reflect new selection
-                render_catalogue(stdscr, days_list, selected_catalogue_index, max(0, selected_catalogue_index - (height // 2)), sidebar_w, height, cat_sel_attr, cat_normal_attr)
+                top_idx_local = max(0, selected_catalogue_index - (height // 2))
+                visible_h_local = max(0, height - 2)
+                top_idx_local = max(0, min(top_idx_local, max(0, len(days_list) - visible_h_local)))
+                render_catalogue(stdscr, days_list, selected_catalogue_index, top_idx_local, sidebar_w, height, cat_sel_attr, cat_normal_attr)
                 try:
                     stdscr.addch(0, sidebar_w, curses.ACS_VLINE)
                 except curses.error:
@@ -708,9 +758,15 @@ def interactive_mode(stdscr) -> None:
             if lt not in tags:
                 tags.append(lt)
 
-        new_entry = {"timestamp": now_exact, "text": cleaned_note, "tags": tags, "location": location}
-        entries.append(new_entry)
-        data["entries"] = entries
+        # **Important fix**: Do NOT append empty-text entries (these are typically task-only inputs).
+        # If the user entered only tasks (cleaned_note is empty) we only add to the tasks_map.
+        if cleaned_note and cleaned_note.strip():
+            new_entry = {"timestamp": now_exact, "text": cleaned_note, "tags": tags, "location": location}
+            entries.append(new_entry)
+            data["entries"] = entries
+        else:
+            # no entry text to record; ensure entries list remains unchanged
+            data["entries"] = entries
 
         if tasks:
             tasks_map = data.get("tasks", {})
@@ -718,8 +774,8 @@ def interactive_mode(stdscr) -> None:
                 add_task_for_date(tasks_map, tomorrow_str, t)
             data["tasks"] = tasks_map
 
+        # save once (save_data already runs git_commit_and_push())
         save_data(data)
-        git_commit_and_push()
 
 # ------------ Main ------------
 def main():
