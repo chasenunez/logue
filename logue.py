@@ -327,6 +327,7 @@ def render_catalogue(stdscr,
     """
     Draw the left sidebar but ONLY within columns [0..sidebar_w-1].
     Never clears beyond the sidebar_w column.
+    Shows only the date and the number of entries (no preview).
     """
     try:
         # For each row, overwrite only the sidebar columns with spaces (safe)
@@ -337,39 +338,44 @@ def render_catalogue(stdscr,
                 pass
 
         title = " Catalogue "
+        max_write = max(0, sidebar_w - 2)
         try:
-            stdscr.addstr(0, 1, title[: max(0, sidebar_w - 2)], curses.A_BOLD)
+            if max_write > 0:
+                stdscr.addnstr(0, 1, title, max_write, curses.A_BOLD)
         except curses.error:
             pass
 
         visible_h = max(0, height - 2)
-        # clamp top_idx to valid range
-        top_idx = max(0, min(top_idx, max(0, len(days_list) - visible_h)))
+
+        # clamp top_idx to valid range so we never try to render an invalid slice
+        max_top = max(0, len(days_list) - visible_h)
+        top_idx = max(0, min(top_idx, max_top))
+
         for idx in range(top_idx, min(top_idx + visible_h, len(days_list))):
             row = 1 + (idx - top_idx)
             day_str, day_entries = days_list[idx]
             count = len(day_entries)
-            preview = ""
-            if day_entries:
-                first = day_entries[0].get("text", "")
-                preview = first.splitlines()[0][: max(0, sidebar_w - 20)]
-            display_day = f"{day_str:11} ({count:2}) {preview}"
+            # display only date and count (no preview)
+            display_day = f"{day_str} ({count})"
             try:
-                if idx == sel_idx:
-                    stdscr.addstr(row, 1, display_day[: max(0, sidebar_w - 2)], attr_selected)
-                else:
-                    stdscr.addstr(row, 1, display_day[: max(0, sidebar_w - 2)], attr_normal)
+                if max_write > 0:
+                    if idx == sel_idx:
+                        stdscr.addnstr(row, 1, display_day, max_write, attr_selected)
+                    else:
+                        stdscr.addnstr(row, 1, display_day, max_write, attr_normal)
             except curses.error:
                 pass
 
         hint = "[Tab/F2 toggle | Enter view day]"
         try:
-            stdscr.addstr(max(0, height - 1), 1, hint[: max(0, sidebar_w - 2)], curses.A_DIM)
+            if max_write > 0:
+                stdscr.addnstr(max(0, height - 1), 1, hint, max_write, curses.A_DIM)
         except curses.error:
             pass
 
     except Exception:
         pass
+
 
 # ------------ Main UI ------------
 def interactive_mode(stdscr) -> None:
@@ -499,9 +505,12 @@ def interactive_mode(stdscr) -> None:
         # grouped days
         days_list = group_entries_by_day(entries)
         selected_catalogue_index = max(0, min(selected_catalogue_index, max(0, len(days_list) - 1)))
+
+        # compute visible rows in the sidebar (title + footer excluded)
         visible_h = max(0, height - 2)
-        top_idx_guess = max(0, selected_catalogue_index - (height // 2))
-        # clamp top_idx so the renderer always receives a valid window
+        # center selected index in the visible window when possible
+        top_idx_guess = max(0, selected_catalogue_index - (visible_h // 2))
+        # clamp top index so that top_idx_guess never goes beyond the available range
         top_idx_clamped = max(0, min(top_idx_guess, max(0, len(days_list) - visible_h)))
 
         # catalogue attributes
@@ -723,9 +732,8 @@ def interactive_mode(stdscr) -> None:
                 elif ch in (10, 13):  # Enter -> view selected day
                     viewed_day_index = selected_catalogue_index
                 # Re-render only the catalogue portion to reflect new selection
-                top_idx_local = max(0, selected_catalogue_index - (height // 2))
-                visible_h_local = max(0, height - 2)
-                top_idx_local = max(0, min(top_idx_local, max(0, len(days_list) - visible_h_local)))
+                top_idx_local = max(0, selected_catalogue_index - (visible_h // 2))
+                top_idx_local = max(0, min(top_idx_local, max(0, len(days_list) - visible_h)))
                 render_catalogue(stdscr, days_list, selected_catalogue_index, top_idx_local, sidebar_w, height, cat_sel_attr, cat_normal_attr)
                 try:
                     stdscr.addch(0, sidebar_w, curses.ACS_VLINE)
