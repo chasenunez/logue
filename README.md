@@ -50,7 +50,6 @@ logue
 
 ### Start logging
 
-
 * Use arrow keys to navigate and edit your current entry.
 * Press Enter to save the entry.
 * Entries are timestamped and saved in `logue.json`.
