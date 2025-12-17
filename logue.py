@@ -23,7 +23,7 @@ from typing import List, Dict, Any, Optional, Tuple
 # ------------ Config ------------
 TASKS_GAP = 1  # blank lines between today's tasks and tomorrow's header
 SWITCH_FOCUS_TOKEN = "__SWITCH_FOCUS__"
-SIDEBAR_MIN_WIDTH = 20
+SIDEBAR_MIN_WIDTH = 10
 
 # ---------------- Paths ----------------
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -486,6 +486,64 @@ def interactive_mode(stdscr) -> None:
     else:
         location_tags = []
 
+    # -----------------------
+    # Clock-In / Clock-Out setup
+    # -----------------------
+    # Determine day, start_time and end_time immediately after the user answered the location
+    dt_now = datetime.datetime.now()
+    day_of_week = dt_now.strftime("%A")               # e.g. "Monday"
+    start_time = dt_now.strftime("%H:%M:%S")          # exact time user submitted location
+    now_exact = dt_now.strftime("%Y_%m_%d_%H_%M_%S")  # timestamp format used by program
+
+    # Business logic: Monday/Tuesday => +9 hours, other days => +8 hours
+    if day_of_week.lower() in ("monday", "tuesday"):
+        delta = datetime.timedelta(hours=9)
+    else:
+        delta = datetime.timedelta(hours=8)
+    end_dt = dt_now + delta
+    end_time = end_dt.strftime("%H:%M:%S")
+
+    # Create a "first entry of the day" if there is no non-empty text entry for today
+    # Use the same today_str created above in interactive_mode (today_str is in scope)
+    # We consider an entry "present" if there's any existing entry with today's prefix and non-empty text.
+    # (This mirrors the session entries logic later in the program.)
+    try:
+        # load initial entries that were loaded earlier
+        # `entries` exists (it was loaded before the prompt). If not, reload.
+        if "entries" not in locals():
+            data = load_data()
+            entries = data.get("entries", [])
+        # Find if any non-empty entry already exists for today
+        today_entries = [
+            e for e in entries
+            if isinstance(e.get("timestamp", ""), str)
+            and e.get("timestamp", "").startswith(today_str)
+            and str(e.get("text", "")).strip() != ""
+        ]
+        if not today_entries:
+            # compose the clock-in entry text
+            clock_text = f"Clock-In at {start_time}. Clock out at {end_time}"
+            tags = location_tags.copy()
+            new_entry = {
+                "timestamp": now_exact,
+                "text": clock_text,
+                "tags": tags,
+                "location": location,
+            }
+            entries.append(new_entry)
+            # persist using existing data dict (or create one) so save_data() will commit & push
+            try:
+                data  # if data exists, update
+            except NameError:
+                data = load_data()
+            data["entries"] = entries
+            save_data(data)  # will write file and trigger git commit/push
+    except Exception as ex:
+        # Best-effort only — do not crash the UI if something unexpectedly fails here.
+        # You can log it to stderr or ignore silently depending on desired behaviour.
+        print(f"[WARN] Failed to create clock-in entry: {ex}", file=sys.stderr)
+
+
     # Main loop
     while True:
         stdscr.erase()
@@ -544,10 +602,18 @@ def interactive_mode(stdscr) -> None:
         date_line = date_str_pretty
         if location:
             date_line += f" {location}"
+        # Include the computed clock-out time in the header (if available)
+        try:
+            # end_time was computed earlier after the location prompt; guard just in case
+            if "end_time" in locals() and end_time:
+                date_line += f"  —  Clock out at {end_time}"
+        except Exception:
+            pass
         try:
             stdscr.addstr(0, max(left, width - len(date_line) - 2), date_line, date_attr)
         except curses.error:
             pass
+
 
 
         # Entry box
